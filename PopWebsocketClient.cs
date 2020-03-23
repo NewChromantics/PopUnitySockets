@@ -7,37 +7,6 @@ using WebSocketSharp;
 using UnityEngine.Events;
 
 
-public class PopMessage
-{
-	public bool		HasBeenHandled = false;
-}
-
-public class PopMessageBinary : PopMessage 
-{
-	public byte[]	Data = null;
-
-	public PopMessageBinary(byte[] _Data)
-	{
-		Data = _Data;
-	}
-};
-
-
-public class PopMessageText : PopMessage 
-{
-	public string	Data = null;
-
-	public PopMessageText(string _Data)
-	{
-		Data = _Data;
-	}
-
-	public T		FromJson<T>()
-	{
-		return JsonUtility.FromJson<T>( Data );
-	}
-};
-
 [System.Serializable]
 public class UnityEvent_MessageBinary : UnityEvent <byte[]> {}
 
