@@ -137,7 +137,9 @@ namespace PopX
 
 		void OnRecv(object This_Socket, SocketAsyncEventArgs Args)
 		{
-			var Packet = Args.Buffer.SubArray(Args.Offset,Args.Count);
+			var Packet = Args.Buffer.SubArray(Args.Offset,Args.BytesTransferred);
+			Debug.Log("Got Packet x"+Packet.Length + " Offset=" + Args.Offset);
+
 			this.OnPacket(Packet);
 
 			//	trigger another read
@@ -148,7 +150,7 @@ namespace PopX
 		{
 			Debug.Log("RecvIteration");
 
-			const int BufferSize = 5;//1024 * 1024;	//	won't ever be 1mb
+			const int BufferSize = 1024 * 1024;	//	won't ever be 1mb
 			var Recv = new SocketAsyncEventArgs();
 			Recv.Completed += OnRecv;
 			Recv.RemoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
