@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Threading;
@@ -140,6 +140,8 @@ namespace PopX
 			var Packet = Args.Buffer.SubArray(Args.Offset,Args.BytesTransferred);
 			Debug.Log("Got Packet x"+Packet.Length + " Offset=" + Args.Offset);
 
+			//	gr: with UDP we're not expecting every packet to be NALU
+			//		should split up with H264 continuation stuff
 			this.OnPacket(Packet);
 
 			//	trigger another read
