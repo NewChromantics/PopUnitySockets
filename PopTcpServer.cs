@@ -40,6 +40,8 @@ namespace PopX
 		//System.IAsyncResult RecvAsync;	//	do we store this so we can terminate on close?
 		System.Action<byte[]> OnPacket;
 		System.Action<string> OnCloseError;
+		System.Action OnClientConnected;
+		System.Action OnClientDisconnected;
 		bool IsRunning = true;                //	false to stop thread/recv loop
 		//System.Threading.Thread RecvThread;
 
@@ -52,6 +54,9 @@ namespace PopX
 				OnCloseError = (Error) => { };
 			if (OnListening == null)
 				OnListening = (Portx) => { };
+
+			OnClientConnected = () =>{ Debug.Log("On client connected"); };
+			OnClientDisconnected = () =>{ Debug.Log("On client disconnected"); };
 
 			this.OnPacket = OnPacket;
 			this.OnCloseError = OnCloseError;
@@ -120,17 +125,37 @@ namespace PopX
 		}
 
 		
-		void OnRecv(object This_Socket, SocketAsyncEventArgs Args)
+		void OnRecv(object This_SocketObj, SocketAsyncEventArgs Args)
 		{
 			var Packet = Args.Buffer.SubArray(Args.Offset,Args.BytesTransferred);
 			//Debug.Log("Got Packet x"+Packet.Length + " Offset=" + Args.Offset);
 
+			var This_Socket = (Socket)This_SocketObj;
+
+			//	if this packet is empty, we may have been disconnected
+			//	break the cycle if so
+			//	gr: connected still true if disonnected, so no help
+			if (!This_Socket.Connected)
+			{
+				this.OnClientDisconnected();
+				return;
+			}
+
+			//	gr: if packet is empty, we may be disconnected... but I haven't confirmed this anywhere
+			if ( Packet.Length == 0 )
+			{
+				Debug.LogWarning("Got packet of 0 bytes, client disconnected?");
+				this.OnClientDisconnected();
+				return;
+			}
+
+
 			//	gr: with UDP we're not expecting every packet to be NALU
 			//		should split up with H264 continuation stuff
-			this.OnPacket(Packet);
+				this.OnPacket(Packet);
 
 			//	trigger another read
-			StartRecv((Socket)This_Socket);
+			StartRecv(This_Socket);
 		}
 
 		void StartRecv(Socket ClientSocket)
@@ -167,7 +192,7 @@ namespace PopX
 			//	client connected, start receiving 
 			StartRecv(Args.AcceptSocket);
 
-			//this.OnClientConnected();
+			this.OnClientConnected();
 
 			//	trigger another accept
 			StartAccept();
