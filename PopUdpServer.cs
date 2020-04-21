@@ -32,27 +32,99 @@ public class UnityEvent_PortError : UnityEvent<int, string> { }
 //	this is the abstracted class, re-write for hololens
 namespace PopX
 {
+	class FewerReallocBuffer
+	{
+		public int MaxOffset = 1033 * 100;  //	dealloc after X packets
+		public int MaxAlloc = 20 * 1024 * 1024;	//	XMB
+		int StartOffset = 0;
+		List<byte> Buffer = new List<byte>();
+		List<int> PacketLengths = new List<int>();
+
+		public void Push(byte[] Data)
+		{
+			lock (Buffer)
+			{
+				if ( Buffer.Count > MaxAlloc )
+				{
+					Debug.LogError("Packet buffer has exceeded " + (MaxAlloc / 1024 / 1024) + "mb. Dropping all");
+					PacketLengths = new List<int>();
+					Buffer.RemoveRange(0, Buffer.Count);
+					StartOffset = 0;
+				}
+				//	todo: expand buffer and overwrite instead of resize
+				Buffer.AddRange(Data);
+				PacketLengths.Add(Data.Length);
+			}
+		}
+
+		public int GetPendingPackets()
+		{
+			return PacketLengths.Count;
+		}
+
+		public byte[] PopPacket()
+		{
+			//	no data
+			if (PacketLengths.Count == 0)
+			{
+				//	todo: check buffer & offset here
+				return null;
+			}
+
+			byte[] Packet;
+			//	the lock is required to sync data on different threads
+			//	the Threaded reciever though, can call this so often, that the lock on Pop blocks the main thread
+			//	and makes unity stutter... i guess a trylock in the push and a sleep would help, to give this thread the
+			//	priority
+			lock (Buffer)
+			{
+				var Start = StartOffset;
+				var Length = PacketLengths[0];
+				Packet = new byte[Length];
+				Buffer.CopyTo(Start, Packet, 0, Length);
+
+				//	remove data
+				StartOffset += Length;
+				PacketLengths.RemoveAt(0);
+
+				//	flush data
+				if (StartOffset >= MaxOffset)
+				{
+					Buffer.RemoveRange(0, StartOffset);
+					StartOffset = 0;
+				}				
+			}
+			//	deadlock if we return inside the lock?!
+			return Packet;
+		}
+	}
+
 	//	assume events are called NOT on the main thread
 	//	gr: this version uses async callback funcs
 	public abstract class UdpServerSocket_Base : System.IDisposable
 	{
 		protected System.Net.Sockets.Socket Socket;
 		protected System.Net.IPEndPoint ListeningEndPoint;
-		System.Action<byte[]> OnPacket;
+		System.Action OnPacketReady;					//	notify when a packet is availible to wake up threads etc
 		protected System.Action<string> OnCloseError;
-		protected bool IsRunning = true;	//	false to stop thread/recv loop
+		protected bool IsRunning = true;    //	false to stop thread/recv loop
 
-		public UdpServerSocket_Base(int Port, System.Action<byte[]> OnPacket, System.Action<int> OnListening, System.Action<string> OnCloseError)
+		//	to avoid dropping packets in UDP, we read as fast as possible and buffer up the output
+		//	instead of a callback to send on packets (called ON the read thread) we notify and
+		//	let the caller pop packets
+		FewerReallocBuffer PacketBuffer = new FewerReallocBuffer();
+
+		public UdpServerSocket_Base(int Port, System.Action OnPacketReady, System.Action<int> OnListening, System.Action<string> OnCloseError)
 		{
 			//	todo: put some "unhandled" debug in these
-			if (OnPacket == null)
-				OnPacket = (Packet) => { };
+			if (OnPacketReady == null)
+				OnPacketReady = () => { };
 			if (OnCloseError == null)
 				OnCloseError = (Error) => { };
 			if (OnListening == null)
 				OnListening = (Portx) => { };
 
-			this.OnPacket = OnPacket;
+			this.OnPacketReady = OnPacketReady;
 			this.OnCloseError = OnCloseError;
 
 			ListeningEndPoint = new IPEndPoint(IPAddress.Any, Port);
@@ -67,6 +139,16 @@ namespace PopX
 		public void Dispose()
 		{
 			Close();
+		}
+		
+		public int GetPendingPackets()
+		{
+			return PacketBuffer.GetPendingPackets();
+		}
+
+		public byte[] PopPacket()
+		{
+			return PacketBuffer.PopPacket();
 		}
 
 		//	callback for async sending
@@ -101,22 +183,10 @@ namespace PopX
 
 		abstract protected void StartRecv();
 
-		List<byte> PacketBuffer = new List<byte>();
-		static byte LastByte = 0;
 
 		protected void OnRecvPacket(byte[] Buffer)
 		{
 			/*
-			 * var FirstA = Packet[0].ToString("X");
-			var FirstB = Packet[1].ToString("X");
-			var FirstC = Packet[2].ToString("X");
-			var FirstD = Packet[2].ToString("X");
-			var LastA = Packet[Packet.Length - 4].ToString("X");
-			var LastB = Packet[Packet.Length - 3].ToString("X");
-			var LastC = Packet[Packet.Length - 2].ToString("X");
-			var LastD = Packet[Packet.Length - 1].ToString("X");
-			Debug.Log("Packet " + FirstA + " " + FirstB + " " + FirstC + " " + FirstD + " end " + LastA + " " + LastB + " " + LastC + " " + LastD + " x" + Result);
-			*/
 			var FirstByte = Buffer[0];
 			if (FirstByte != LastByte + 1)
 				Debug.LogWarning("Numbers out of sync " + LastByte + " -> " + FirstByte);
@@ -132,6 +202,9 @@ namespace PopX
 				PacketBuffer = new List<byte>();
 				//System.Threading.Thread.Sleep(200);
 			}
+			*/
+			PacketBuffer.Push(Buffer);
+			this.OnPacketReady();
 		}
 	}
 
@@ -139,8 +212,8 @@ namespace PopX
 	//	gr: this version uses async callback funcs
 	public class UdpServerSocket_Async : UdpServerSocket_Base
 	{
-		public UdpServerSocket_Async(int Port, System.Action<byte[]> OnPacket, System.Action<int> OnListening, System.Action<string> OnCloseError) :
-			base( Port, OnPacket,OnListening, OnCloseError)
+		public UdpServerSocket_Async(int Port, System.Action OnPacketReady, System.Action<int> OnListening, System.Action<string> OnCloseError) :
+			base( Port, OnPacketReady, OnListening, OnCloseError)
 		{
 		}
 
@@ -184,8 +257,8 @@ namespace PopX
 	{
 		System.Threading.Thread RecvThread;
 
-		public UdpServerSocket_Threaded(int Port, System.Action<byte[]> OnPacket, System.Action<int> OnListening, System.Action<string> OnCloseError) :
-			base(Port, OnPacket, OnListening, OnCloseError)
+		public UdpServerSocket_Threaded(int Port, System.Action OnPacketReady, System.Action<int> OnListening, System.Action<string> OnCloseError) :
+			base(Port, OnPacketReady, OnListening, OnCloseError)
 		{
 		}
 
@@ -278,9 +351,11 @@ public class PopUdpServer : MonoBehaviour
 
 	public UnityEvent_MessageBinary		OnMessageBinary;
 
-	//	move these jobs to a thread!
-	[Range(1,5000)]
-	public int							MaxJobsPerFrame = 1000;
+	[Range(1, 1000)]
+	public int MaxJobsPerFrame = 100;
+	[Range(1, 1000)]
+	public int MaxPacketsPerFrame = 100;
+	
 
 	public bool UseAsyncServer = false;
 	PopX.UdpServerSocket_Base Socket;
@@ -364,19 +439,22 @@ public class PopUdpServer : MonoBehaviour
 				});
 			};
 
-			System.Action<byte[]> OnPacket = (Packet) =>
-			{
+			/*
+			System.Action<byte[]> OnPacketReady = (Packet) =>
+			{				
 				QueueJob(() =>
 				{
 					OnBinaryMessage(Packet);
 				});
 			};
+			*/
+			System.Action OnPacketReady = null;
 
 			SocketConnecting = true;
 			if (UseAsyncServer)
-				Socket = new PopX.UdpServerSocket_Async(Port, OnPacket, OnOpen, OnClose);
+				Socket = new PopX.UdpServerSocket_Async(Port, OnPacketReady, OnOpen, OnClose);
 			else
-				Socket = new PopX.UdpServerSocket_Threaded(Port, OnPacket, OnOpen, OnClose);
+				Socket = new PopX.UdpServerSocket_Threaded(Port, OnPacketReady, OnOpen, OnClose);
 		}
 		catch (System.Exception e) 
 		{
@@ -387,7 +465,6 @@ public class PopUdpServer : MonoBehaviour
 
 	void Update()
 	{
-
 		/*
 		if (Socket != null && !Socket.IsAlive) {
 			OnError ("Socket not alive");
@@ -427,7 +504,24 @@ public class PopUdpServer : MonoBehaviour
 			}
 
 			if (JobQueue.Count>0) {
-				Debug.LogWarning("Executed " + JobsExecutedCount + " this frame, " + JobQueue.Count + " jobs remaining");
+				Debug.LogWarning("Executed " + JobsExecutedCount + " this frame, " + JobQueue.Count + " jobs remaining",this);
+			}
+
+			//	pop packets
+			if ( Socket!=null )
+			{
+				for ( var p=0;	p<MaxPacketsPerFrame;	p++)
+				{
+					var Packet = Socket.PopPacket();
+					if (Packet == null)
+						break;
+					OnBinaryMessage(Packet);
+				}
+				var PendingPackets = Socket.GetPendingPackets();
+				if (PendingPackets > 0 && VerboseDebug)
+				{
+					Debug.LogWarning(PendingPackets + " packets remaining", this);
+				}
 			}
 		}
 
