@@ -33,17 +33,16 @@ public class UnityEvent_PortError : UnityEvent<int, string> { }
 namespace PopX
 {
 	//	assume events are called NOT on the main thread
-	public class UdpServerSocket : System.IDisposable
+	//	gr: this version uses async callback funcs
+	public abstract class UdpServerSocket_Base : System.IDisposable
 	{
-		System.Net.Sockets.Socket Socket;
-		System.Net.IPEndPoint ListeningEndPoint;
-		//System.IAsyncResult RecvAsync;	//	do we store this so we can terminate on close?
+		protected System.Net.Sockets.Socket Socket;
+		protected System.Net.IPEndPoint ListeningEndPoint;
 		System.Action<byte[]> OnPacket;
-		System.Action<string> OnCloseError;
-		bool IsRunning = true;                //	false to stop thread/recv loop
-		//System.Threading.Thread RecvThread;
+		protected System.Action<string> OnCloseError;
+		protected bool IsRunning = true;	//	false to stop thread/recv loop
 
-		public UdpServerSocket(int Port, System.Action<byte[]> OnPacket, System.Action<int> OnListening, System.Action<string> OnCloseError)
+		public UdpServerSocket_Base(int Port, System.Action<byte[]> OnPacket, System.Action<int> OnListening, System.Action<string> OnCloseError)
 		{
 			//	todo: put some "unhandled" debug in these
 			if (OnPacket == null)
@@ -59,9 +58,6 @@ namespace PopX
 			ListeningEndPoint = new IPEndPoint(IPAddress.Any, Port);
 			Socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
 			Socket.Bind(ListeningEndPoint);
-
-			//	help debug by not blocking
-		//Socket.Blocking = false;
 
 			var LocalEndPoint = (IPEndPoint)Socket.LocalEndPoint;
 			OnListening.Invoke(LocalEndPoint.Port);
@@ -99,39 +95,61 @@ namespace PopX
 				Socket.Close();
 				Socket = null;
 			}
-
-			/*
-			//	kill thread
-			if (RecvThread != null)
-			{
-				Debug.Log("aborting thread...");
-				//	I think we can safely abort, might need to check. If we don't, depending on how much data we've thrown at the decoder, this could take ages to finish
-				RecvThread.Abort();
-				RecvThread.Join();
-				RecvThread = null;
-			}
-			*/
-			//	can we kill pending async Recv?
-
 			//	if socket was null, we should probably make sure that means we've already closed
 			this.OnCloseError(null);
 		}
 
-		void StartRecv()
+		abstract protected void StartRecv();
+
+		List<byte> PacketBuffer = new List<byte>();
+		static byte LastByte = 0;
+
+		protected void OnRecvPacket(byte[] Buffer)
+		{
+			/*
+			 * var FirstA = Packet[0].ToString("X");
+			var FirstB = Packet[1].ToString("X");
+			var FirstC = Packet[2].ToString("X");
+			var FirstD = Packet[2].ToString("X");
+			var LastA = Packet[Packet.Length - 4].ToString("X");
+			var LastB = Packet[Packet.Length - 3].ToString("X");
+			var LastC = Packet[Packet.Length - 2].ToString("X");
+			var LastD = Packet[Packet.Length - 1].ToString("X");
+			Debug.Log("Packet " + FirstA + " " + FirstB + " " + FirstC + " " + FirstD + " end " + LastA + " " + LastB + " " + LastC + " " + LastD + " x" + Result);
+			*/
+			var FirstByte = Buffer[0];
+			if (FirstByte != LastByte + 1)
+				Debug.LogWarning("Numbers out of sync " + LastByte + " -> " + FirstByte);
+			LastByte = Buffer[Buffer.Length - 1];
+
+			//	see if grabbing bytes in tighter loops means less packet loss...
+			PacketBuffer.AddRange(Buffer);
+
+			var FlushSize = 1024;// * 1024;
+			if (PacketBuffer.Count >= FlushSize)
+			{
+				this.OnPacket(PacketBuffer.ToArray());
+				PacketBuffer = new List<byte>();
+				//System.Threading.Thread.Sleep(200);
+			}
+		}
+	}
+
+
+	//	gr: this version uses async callback funcs
+	public class UdpServerSocket_Async : UdpServerSocket_Base
+	{
+		public UdpServerSocket_Async(int Port, System.Action<byte[]> OnPacket, System.Action<int> OnListening, System.Action<string> OnCloseError) :
+			base( Port, OnPacket,OnListening, OnCloseError)
+		{
+		}
+
+		override protected void StartRecv()
 		{
 			//	break the cycle if we're not running
 			if (!IsRunning)
 				return;
 
-			//	gr: we've switched to async because we can't seem to interrupt RecvFrom() and thread gets stuck
-			//		but this means the main thread is just gonna be interrupted? what thread is it on!
-			/*
-			if (RecvThread == null)
-			{
-				RecvThread = new System.Threading.Thread(new System.Threading.ThreadStart(RecvLoop));
-				RecvThread.Start();
-			}
-			*/
 			RecvIteration();
 		}
 
@@ -140,9 +158,7 @@ namespace PopX
 			var Packet = Args.Buffer.SubArray(Args.Offset,Args.BytesTransferred);
 			//Debug.Log("Got Packet x"+Packet.Length + " Offset=" + Args.Offset);
 
-			//	gr: with UDP we're not expecting every packet to be NALU
-			//		should split up with H264 continuation stuff
-			this.OnPacket(Packet);
+			OnRecvPacket(Packet);
 
 			//	trigger another read
 			StartRecv();
@@ -162,7 +178,89 @@ namespace PopX
 				OnRecv(this.Socket,Recv);
 			}
 		}
+	}
 
+	public class UdpServerSocket_Threaded : UdpServerSocket_Base
+	{
+		System.Threading.Thread RecvThread;
+
+		public UdpServerSocket_Threaded(int Port, System.Action<byte[]> OnPacket, System.Action<int> OnListening, System.Action<string> OnCloseError) :
+			base(Port, OnPacket, OnListening, OnCloseError)
+		{
+		}
+
+
+		override protected void StartRecv()
+		{
+			//	break the cycle if we're not running
+			if (!IsRunning)
+				return;
+
+			//	if no thread, start it
+			if (RecvThread == null)
+			{
+				//	gr: we've switched to async because we can't seem to interrupt RecvFrom() and thread gets stuck
+				//		but this means the main thread is just gonna be interrupted? what thread is it on!
+				RecvThread = new System.Threading.Thread(new System.Threading.ThreadStart(RecvLoop));
+				RecvThread.Start();
+			}
+		}
+
+
+		public void CloseThreadedSocket(bool WaitForThread = true)
+		{
+			this.IsRunning = false;
+
+			//	kill thread
+			if (RecvThread != null)
+			{
+				Debug.Log("aborting thread...");
+				//	I think we can safely abort, might need to check. If we don't, depending on how much data we've thrown at the decoder, this could take ages to finish
+				RecvThread.Abort();
+				RecvThread.Join();
+				RecvThread = null;
+			}
+			
+			//	stop thread looping
+			this.IsRunning = false;
+		}
+		
+		void RecvLoop()
+		{
+			while ( IsRunning )
+			{
+				//	throttle for now
+				System.Threading.Thread.Sleep(10);
+
+				var Flags = SocketFlags.None;
+
+				
+				if( false)
+				{
+					const int FIONREAD = 0x4004667F;
+					byte[] outValue = System.BitConverter.GetBytes(0);
+					Socket.IOControl(FIONREAD, null, outValue);
+					uint bytesAvailable = System.BitConverter.ToUInt32(outValue, 0);
+					//	always 0
+					Debug.Log("Data waiting " + Socket.Available + " IO:" + bytesAvailable);
+				}
+				var Buffer = new byte[1033*2];
+				var Result = Socket.Receive(Buffer, Flags);
+				if (Result > 0)
+				{
+					var Packet = Buffer.SubArray(0, Result);
+					OnRecvPacket(Packet);
+				}
+				else
+				{
+					//	error
+					//	todo: check for EWOULDBLOCK for nonblocking sockets
+					Debug.LogError("Socket recv " + Result);
+					return;
+				}
+			}
+
+		}
 	}
 }
 
@@ -184,9 +282,10 @@ public class PopUdpServer : MonoBehaviour
 	[Range(1,5000)]
 	public int							MaxJobsPerFrame = 1000;
 
-	PopX.UdpServerSocket Socket;
+	public bool UseAsyncServer = false;
+	PopX.UdpServerSocket_Base Socket;
 	bool		SocketConnecting = false;
-
+	
 	public bool	VerboseDebug = false;
 
 
@@ -274,9 +373,12 @@ public class PopUdpServer : MonoBehaviour
 			};
 
 			SocketConnecting = true;
-			Socket = new PopX.UdpServerSocket(Port, OnPacket, OnOpen, OnClose);
+			if (UseAsyncServer)
+				Socket = new PopX.UdpServerSocket_Async(Port, OnPacket, OnOpen, OnClose);
+			else
+				Socket = new PopX.UdpServerSocket_Threaded(Port, OnPacket, OnOpen, OnClose);
 		}
-		catch(System.Exception e) 
+		catch (System.Exception e) 
 		{
 			SocketConnecting = false;
 			OnError(Port, e.Message);
