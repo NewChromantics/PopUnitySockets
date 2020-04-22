@@ -357,7 +357,7 @@ public class PopUdpServer : MonoBehaviour
 	public int MaxPacketsPerFrame = 100;
 	
 
-	public bool UseAsyncServer = false;
+	public bool UseAsyncServer = true;	//	gr: use async by default, the Threaded one blocks with a lock too often and stalls the thread atm
 	PopX.UdpServerSocket_Base Socket;
 	bool		SocketConnecting = false;
 	
