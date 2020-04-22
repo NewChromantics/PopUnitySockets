@@ -113,9 +113,13 @@ namespace PopX
 		//	instead of a callback to send on packets (called ON the read thread) we notify and
 		//	let the caller pop packets
 		FewerReallocBuffer PacketBuffer = new FewerReallocBuffer();
+		FrameCounter RecvKbCounter;
 
-		public UdpServerSocket_Base(int Port, System.Action OnPacketReady, System.Action<int> OnListening, System.Action<string> OnCloseError)
+		public UdpServerSocket_Base(int Port, System.Action OnPacketReady,System.Action<int> OnListening, System.Action<string> OnCloseError, System.Action<float> OnKbpsReport)
 		{
+			if (OnKbpsReport == null)
+				OnKbpsReport = (Kbps) => Debug.Log("UDP Server Recieved " + Kbps + "kb/s");
+		
 			//	todo: put some "unhandled" debug in these
 			if (OnPacketReady == null)
 				OnPacketReady = () => { };
@@ -123,6 +127,8 @@ namespace PopX
 				OnCloseError = (Error) => { };
 			if (OnListening == null)
 				OnListening = (Portx) => { };
+
+			RecvKbCounter = new FrameCounter(OnKbpsReport,1.0f);
 
 			this.OnPacketReady = OnPacketReady;
 			this.OnCloseError = OnCloseError;
@@ -203,6 +209,7 @@ namespace PopX
 				//System.Threading.Thread.Sleep(200);
 			}
 			*/
+			RecvKbCounter.Add(Buffer.Length / 1024.0f);
 			PacketBuffer.Push(Buffer);
 			this.OnPacketReady();
 		}
@@ -212,8 +219,8 @@ namespace PopX
 	//	gr: this version uses async callback funcs
 	public class UdpServerSocket_Async : UdpServerSocket_Base
 	{
-		public UdpServerSocket_Async(int Port, System.Action OnPacketReady, System.Action<int> OnListening, System.Action<string> OnCloseError) :
-			base( Port, OnPacketReady, OnListening, OnCloseError)
+		public UdpServerSocket_Async(int Port, System.Action OnPacketReady, System.Action<int> OnListening, System.Action<string> OnCloseError, System.Action<float> OnKbpsReport) :
+			base( Port, OnPacketReady, OnListening, OnCloseError, OnKbpsReport)
 		{
 		}
 
@@ -257,8 +264,8 @@ namespace PopX
 	{
 		System.Threading.Thread RecvThread;
 
-		public UdpServerSocket_Threaded(int Port, System.Action OnPacketReady, System.Action<int> OnListening, System.Action<string> OnCloseError) :
-			base(Port, OnPacketReady, OnListening, OnCloseError)
+		public UdpServerSocket_Threaded(int Port, System.Action OnPacketReady, System.Action<int> OnListening, System.Action<string> OnCloseError, System.Action<float> OnKbpsReport) :
+			base(Port, OnPacketReady, OnListening, OnCloseError,OnKbpsReport)
 		{
 		}
 
@@ -340,7 +347,6 @@ namespace PopX
 
 
 
-
 public class PopUdpServer : MonoBehaviour
 {
 	[Header("First argument of event is port. Second is error")]
@@ -351,9 +357,13 @@ public class PopUdpServer : MonoBehaviour
 
 	public UnityEvent_MessageBinary		OnMessageBinary;
 
-	[Range(1, 1000)]
+	public UnityEvent_FrameCountPerSecondString OnKbpsString;
+	public UnityEvent_FrameCountPerSecondFloat OnKbpsFloat;
+
+
+	[Range(1, 9000)]
 	public int MaxJobsPerFrame = 100;
-	[Range(1, 1000)]
+	[Range(1, 9000)]
 	public int MaxPacketsPerFrame = 100;
 	
 
@@ -450,11 +460,19 @@ public class PopUdpServer : MonoBehaviour
 			*/
 			System.Action OnPacketReady = null;
 
+			System.Action<float> OnKbpsReport = (Kbps) =>
+			{
+				QueueJob(() =>
+							{
+								this.OnKbpsReport(Kbps);
+							});
+			};
+
 			SocketConnecting = true;
 			if (UseAsyncServer)
-				Socket = new PopX.UdpServerSocket_Async(Port, OnPacketReady, OnOpen, OnClose);
+				Socket = new PopX.UdpServerSocket_Async(Port, OnPacketReady, OnOpen, OnClose, OnKbpsReport);
 			else
-				Socket = new PopX.UdpServerSocket_Threaded(Port, OnPacketReady, OnOpen, OnClose);
+				Socket = new PopX.UdpServerSocket_Threaded(Port, OnPacketReady, OnOpen, OnClose, OnKbpsReport);
 		}
 		catch (System.Exception e) 
 		{
@@ -569,13 +587,18 @@ public class PopUdpServer : MonoBehaviour
 		JobQueue.Add( Job );
 	}
 
-	public void Send(byte[] Data,System.Action<bool> OnDataSent=null)
+	public void Send(byte[] Data, System.Action<bool> OnDataSent = null)
 	{
 		//	todo: queue packets
 		if (Socket == null)
-			throw new System.Exception ("Not connected");
+			throw new System.Exception("Not connected");
 
-		Socket.Send (Data,OnDataSent);
+		Socket.Send(Data, OnDataSent);
 	}
 
+	void OnKbpsReport(float Kpbs)
+	{
+		OnKbpsFloat.Invoke(Kpbs);
+		OnKbpsString.Invoke(Kpbs.ToString("0.00 kb/s"));
+	}
 }
