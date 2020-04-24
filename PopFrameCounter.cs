@@ -49,7 +49,7 @@ namespace PopX
 			float TimeSinceLap = NowSecs - LastLapTime;
 			if (TimeSinceLap < ReportEverySeconds)
 			{
-				Debug.Log("TimeSinceLap=" + TimeSinceLap + " now=" + NowSecs );
+				//Debug.Log("TimeSinceLap=" + TimeSinceLap + " now=" + NowSecs );
 				return;
 			}
 
