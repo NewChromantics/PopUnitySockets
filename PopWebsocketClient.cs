@@ -147,9 +147,9 @@ public class PopWebsocketClient : MonoBehaviour
 
 				System.Action Handler = ()=>
 				{
-					if ( e.Type == Opcode.TEXT )
+					if ( e.IsText )
 						OnTextMessage( e.Data );
-					else if ( e.Type == Opcode.BINARY )
+					else if ( e.IsBinary )
 						OnBinaryMessage( e.RawData );
 					else
 						OnError( Host, "Unknown opcode " + e.Type, false );
