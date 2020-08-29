@@ -35,23 +35,24 @@ public class PopWebsocketClient : MonoBehaviour
 	[Range(1,5000)]
 	public int							MaxJobsPerFrame = 1000;
 
-	public int	DefaultPort = 80;
-
 	WebSocket	Socket;
 	bool		SocketConnecting = false;
 
 	public bool	VerboseDebug = false;
 
 
-	public List<string>	Hosts = new List<string> (){ "localhost" };
-	int					CurrentHostIndex = 0;
+	public List<string> Hosts = new List<string>() { "localhost" };
+	public List<int>	Ports = new List<int>() { 80 };
+	int CurrentHostPortIndex = 0;
 	public string 		CurrentHost	
 	{	
 		get
 		{	
 			try
 			{
-				return AddPortToHostname( Hosts[CurrentHostIndex%Hosts.Count], DefaultPort);
+				var HostIndex = (CurrentHostPortIndex / Ports.Count) % Hosts.Count;
+				var PortIndex = CurrentHostPortIndex % Ports.Count;
+				return AddPortToHostname( Hosts[HostIndex], Ports[PortIndex] );
 			}
 			catch{}
 			return null;
@@ -103,7 +104,7 @@ public class PopWebsocketClient : MonoBehaviour
 			OnDisconnected.Invoke (null, "No hostname specified");
 			return;
 		}
-
+		CurrentHostPortIndex++;
 		Debug_Log("Connecting to " + Host + "...");
 		OnConnecting.Invoke (Host);
 
