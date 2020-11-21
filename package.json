@@ -1,0 +1,12 @@
+{
+  "name": "com.newchromantics.popunitysockets",
+  "displayName": "PopUnitySockets",
+  "version": "0.0.1",
+  "description": "Barebones/simple API Websocket client, UDP server, UDP client.",
+  "author":
+  {
+    "name" : "New Chromantics", 
+    "email" : "graham@newchromantics.com",
+    "url" : "https://github.com/NewChromantics/PopUnitySockets"
+  }
+}
