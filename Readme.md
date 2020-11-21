@@ -1,6 +1,6 @@
 PopUnitySockets
 ===================
-Very simple socket components (with matching API)
+Very simple socket components (with matching APIs)
 - Auto-reconnect via list of hostnames & ports (cycles through them all when connection fails)
 - Just `OnBinaryPacket` and `OnTextPacket` (where applicable) events
 - Some abstractions for different platforms (I swear I wrote a hololens/uwp one)
