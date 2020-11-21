@@ -1,7 +1,7 @@
 {
   "name": "com.newchromantics.popunitysockets",
   "displayName": "PopUnitySockets",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Barebones/simple API Websocket client, UDP server, UDP client.",
   "author":
   {
