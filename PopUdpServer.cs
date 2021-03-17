@@ -307,13 +307,14 @@ namespace PopX
 		
 		void RecvLoop()
 		{
+			//	alloc once
+			var Buffer = new byte[1033*2];
 			while ( IsRunning )
 			{
 				//	throttle for now
-				System.Threading.Thread.Sleep(10);
-
+				//	gr: if this is non blocking, THEN sleep if we get zero/wouldblock in recv
+				//System.Threading.Thread.Sleep(10);
 				var Flags = SocketFlags.None;
-
 				
 				if( false)
 				{
@@ -321,13 +322,13 @@ namespace PopX
 					byte[] outValue = System.BitConverter.GetBytes(0);
 					Socket.IOControl(FIONREAD, null, outValue);
 					uint bytesAvailable = System.BitConverter.ToUInt32(outValue, 0);
-					//	always 0
+					//	gr: always 0
 					Debug.Log("Data waiting " + Socket.Available + " IO:" + bytesAvailable);
 				}
-				var Buffer = new byte[1033*2];
 				var Result = Socket.Receive(Buffer, Flags);
 				if (Result > 0)
 				{
+					//	todo: check if there is a common buffer size (ie, max mtu) and avoid alloc in subarray
 					var Packet = Buffer.SubArray(0, Result);
 					OnRecvPacket(Packet);
 				}
