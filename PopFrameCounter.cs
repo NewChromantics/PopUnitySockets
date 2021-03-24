@@ -22,10 +22,11 @@ namespace PopX
 
 		//float NowSecs { get { return (float)System.DateTime.Now.Subtract(InitTime).TotalSeconds; } }
 		//float NowSecs { get { return (float)System.DateTime.UtcNow.Subtract(InitTime).TotalSeconds; } }	//	subtract() to get a timespan in order to get total
-		float NowSecs { get { return Stopwatch.ElapsedMilliseconds / 1000.0f; } } 
+		//float NowSecs { get { return Stopwatch.ElapsedMilliseconds / 1000.0f; } } 
 		//float NowSecs { get { return (float)UnityEngine.Time.time; } }
 		//float NowSecs { get { return (float)UnityEngine.Time.realtimeSinceStartup; } }
-
+		float NowSecs { get { return (float)AudioSettings.dspTime; } } 
+		
 		//	initialisation variables for different clocks above
 		System.Diagnostics.Stopwatch Stopwatch = System.Diagnostics.Stopwatch.StartNew();
 		System.DateTime InitTime = System.DateTime.UtcNow;	//	this can be any datetime value, just needs to be fixed. Clock comparison is done via LastLapTime.
