@@ -136,6 +136,8 @@ namespace PopX
 			ListeningEndPoint = new IPEndPoint(IPAddress.Any, Port);
 			Socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
 			Socket.Bind(ListeningEndPoint);
+			var ReceiveBufferSize = Socket.ReceiveBufferSize;
+			Debug.Log("Socket ReceiveBufferSize="+ReceiveBufferSize);
 
 			var LocalEndPoint = (IPEndPoint)Socket.LocalEndPoint;
 			OnListening.Invoke(LocalEndPoint.Port);
