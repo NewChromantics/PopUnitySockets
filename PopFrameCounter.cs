@@ -16,14 +16,17 @@ namespace PopX
 	public class FrameCounter
 	{
 		//	we don't use Time.time as that can only be used on the main thread
-		float NowSecs { get { return (float)System.DateTime.Now.Subtract(StartTime).TotalSeconds; } }
+		//	UtcNow is supposedly faster https://stackoverflow.com/a/1561894/355753
+		//	and we just need a consistent time reference, not an "accurate" time
+		//float NowSecs { get { return (float)System.DateTime.Now.Subtract(StartTime).TotalSeconds; } }
+		float NowSecs { get { return (float)System.DateTime.UtcNow.Subtract(StartTime).TotalSeconds; } }
 
 		float Counter = 0;
 		float LastLapTime;
 		float ReportEverySeconds;
 		System.Action<float> OnSecondLapsed;
 
-		System.DateTime StartTime = System.DateTime.Now;
+		System.DateTime StartTime = System.DateTime.UtcNow;
 
 		public FrameCounter(System.Action<float> OnSecondLapsed, float ReportEverySeconds = 1)
 		{
