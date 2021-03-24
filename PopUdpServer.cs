@@ -192,23 +192,6 @@ namespace PopX
 
 		protected void OnRecvPacket(byte[] Buffer)
 		{
-			/*
-			var FirstByte = Buffer[0];
-			if (FirstByte != LastByte + 1)
-				Debug.LogWarning("Numbers out of sync " + LastByte + " -> " + FirstByte);
-			LastByte = Buffer[Buffer.Length - 1];
-
-			//	see if grabbing bytes in tighter loops means less packet loss...
-			PacketBuffer.AddRange(Buffer);
-
-			var FlushSize = 1024;// * 1024;
-			if (PacketBuffer.Count >= FlushSize)
-			{
-				this.OnPacket(PacketBuffer.ToArray());
-				PacketBuffer = new List<byte>();
-				//System.Threading.Thread.Sleep(200);
-			}
-			*/
 			RecvKbCounter.Add(Buffer.Length / 1024.0f);
 			PacketBuffer.Push(Buffer);
 			this.OnPacketReady();
