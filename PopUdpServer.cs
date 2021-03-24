@@ -194,9 +194,15 @@ namespace PopX
 
 		protected void OnRecvPacket(byte[] Buffer)
 		{
-			RecvKbCounter.Add(Buffer.Length / 1024.0f);
+			OnRecvPacket(Buffer.Length);
 			PacketBuffer.Push(Buffer);
 			this.OnPacketReady();
+		}
+
+		//	non-allocating counter for speed debugging
+		protected void OnRecvPacket(int BufferLength)
+		{
+			RecvKbCounter.Add(BufferLength / 1024.0f);
 		}
 	}
 
@@ -293,13 +299,15 @@ namespace PopX
 		void RecvLoop()
 		{
 			//	alloc once
-			var Buffer = new byte[1033*2];
+			//	gr: having a more precise buffer (1033 as udp limit) SEEMS to be faster...
+			//		even when not doing anything with it after
+			var Buffer = new byte[1033*1];
 			while ( IsRunning )
 			{
 				//	throttle for now
 				//	gr: if this is non blocking, THEN sleep if we get zero/wouldblock in recv
 				//System.Threading.Thread.Sleep(10);
-				var Flags = SocketFlags.None;
+				var Flags = SocketFlags.None;	//	.Partial makes little difference
 				
 				if( false)
 				{
@@ -313,6 +321,7 @@ namespace PopX
 				var Result = Socket.Receive(Buffer, Flags);
 				if (Result > 0)
 				{
+					//OnRecvPacket( Result );
 					//	todo: check if there is a common buffer size (ie, max mtu) and avoid alloc in subarray
 					var Packet = Buffer.SubArray(0, Result);
 					OnRecvPacket(Packet);
